@@ -2,7 +2,7 @@ const Router = require('@koa/router')
 
 const { db } = require('../db')
 const { validate_fid, gen_count_body } = require('./gd')
-const { send_count, send_help, send_choice, send_task_info, sm, extract_fid, extract_from_text, reply_cb_query, tg_copy, send_all_tasks, send_bm_help, get_target_by_alias, send_all_bookmarks, set_bookmark, unset_bookmark, clear_tasks, send_task_help, rm_task, clear_button } = require('./tg')
+const { send_count, send_help, send_choice, send_task_info, sm, extract_fid, extract_from_text, reply_cb_query, tg_copy, send_all_tasks, send_bm_help, get_target_by_alias, send_all_bookmarks, set_bookmark, unset_bookmark, clear_tasks, send_task_help, rm_task } = require('./tg')
 
 const { AUTH, ROUTER_PASSKEY, TG_IPLIST } = require('../config')
 const { tg_whitelist } = AUTH
@@ -42,10 +42,11 @@ router.get('/api/gdurl/count', async ctx => {
 router.post('/api/gdurl/tgbot', async ctx => {
   const { body } = ctx.request
   console.log('ctx.ip', ctx.ip) // 可以只允许tg服务器的ip
-  console.log('tg message:', body)
+  console.log('tg message:', JSON.stringify(body, null, '  '))
   if (TG_IPLIST && !TG_IPLIST.includes(ctx.ip)) return ctx.body = 'invalid ip'
   ctx.body = '' // 早点释放连接
   const message = body.message || body.edited_message
+  const message_str = JSON.stringify(message)
 
   const { callback_query } = body
   if (callback_query) {
@@ -75,23 +76,26 @@ router.post('/api/gdurl/tgbot', async ctx => {
       })
     } else if (action === 'clear_button') {
       const { message_id, text } = message || {}
-      if (message_id) clear_button({ message_id, text, chat_id })
+      if (message_id) sm({ chat_id, message_id, text, parse_mode: 'HTML' }, 'editMessageText')
     }
     return reply_cb_query({ id, data }).catch(console.error)
   }
 
   const chat_id = message && message.chat && message.chat.id
-  const text = message && message.text && message.text.trim()
+  const text = (message && message.text && message.text.trim()) || ''
   let username = message && message.from && message.from.username
   username = username && String(username).toLowerCase()
   let user_id = message && message.from && message.from.id
   user_id = user_id && String(user_id).toLowerCase()
-  if (!chat_id || !text || !tg_whitelist.some(v => {
+  if (!chat_id || !tg_whitelist.some(v => {
     v = String(v).toLowerCase()
     return v === username || v === user_id
-  })) return console.warn('异常请求')
+  })) {
+    chat_id && sm({ chat_id, text: '您的用户名或ID不在机器人的白名单中，如果是您配置的机器人，请先到config.js中配置自己的username' })
+    return console.warn('收到非白名单用户的请求')
+  }
 
-  const fid = extract_fid(text) || extract_from_text(text)
+  const fid = extract_fid(text) || extract_from_text(text) || extract_from_text(message_str)
   const no_fid_commands = ['/task', '/help', '/bm']
   if (!no_fid_commands.some(cmd => text.startsWith(cmd)) && !validate_fid(fid)) {
     return sm({ chat_id, text: '未识别出分享ID' })
@@ -152,7 +156,7 @@ router.post('/api/gdurl/tgbot', async ctx => {
       return running_tasks.forEach(v => send_task_info({ chat_id, task_id: v.id }).catch(console.error))
     }
     send_task_info({ task_id, chat_id }).catch(console.error)
-  } else if (text.includes('drive.google.com/') || validate_fid(text)) {
+  } else if (message_str.includes('drive.google.com/') || validate_fid(text)) {
     return send_choice({ fid: fid || text, chat_id })
   } else {
     sm({ chat_id, text: '暂不支持此命令' })

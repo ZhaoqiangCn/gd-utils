@@ -146,13 +146,6 @@ function send_choice ({ fid, chat_id }) {
   })
 }
 
-function clear_button ({ message_id, text, chat_id }) {
-  const url = `https://api.telegram.org/bot${tg_token}/editMessageText`
-  return axins.post(url, { chat_id, message_id, text, parse_mode: 'HTML' }).catch(e => {
-    console.error('fail to clear_button', e.message)
-  })
-}
-
 // console.log(gen_bookmark_choices())
 function gen_bookmark_choices (fid) {
   const gen_choice = v => ({ text: `复制到 ${v.alias}`, callback_data: `copy ${fid} ${v.alias}` })
@@ -186,8 +179,8 @@ async function send_all_tasks (chat_id) {
     // const description = err.response && err.response.data && err.response.data.description
     // if (description && description.includes('message is too long')) {
     if (true) {
-      const text = [headers].concat(records).map(v => v.join('\t')).join('\n')
-      return sm({ chat_id, parse_mode: 'HTML', text: `所有拷贝任务：\n<pre>${text}</pre>` })
+      const text = [headers].concat(records.slice(-100)).map(v => v.join('\t')).join('\n')
+      return sm({ chat_id, parse_mode: 'HTML', text: `所有拷贝任务(只显示最近100条)：\n<pre>${text}</pre>` })
     }
     console.error(err)
   })
@@ -233,10 +226,9 @@ async function send_task_info ({ task_id, chat_id }) {
   // get_task_info 在task目录数超大时比较吃cpu，以后如果最好把mapping也另存一张表
   if (!message_id || status !== 'copying') return
   const loop = setInterval(async () => {
-    const url = `https://api.telegram.org/bot${tg_token}/editMessageText`
     const { text, status } = await get_task_info(task_id)
     if (status !== 'copying') clearInterval(loop)
-    axins.post(url, { chat_id, message_id, text, parse_mode: 'HTML' }).catch(e => console.error(e.message))
+    sm({ chat_id, message_id, text, parse_mode: 'HTML' }, 'editMessageText')
   }, 10 * 1000)
 }
 
@@ -339,11 +331,14 @@ ${table}</pre>`
   })
 }
 
-function sm (data) {
-  const url = `https://api.telegram.org/bot${tg_token}/sendMessage`
+function sm (data, endpoint) {
+  endpoint = endpoint || 'sendMessage'
+  const url = `https://api.telegram.org/bot${tg_token}/${endpoint}`
   return axins.post(url, data).catch(err => {
     // console.error('fail to post', url, data)
     console.error('fail to send message to tg:', err.message)
+    const err_data = err.response && err.response.data
+    err_data && console.error(err_data)
   })
 }
 
@@ -368,9 +363,10 @@ function extract_fid (text) {
 }
 
 function extract_from_text (text) {
-  const reg = /https?:\/\/drive.google.com\/[^\s]+/g
+  // const reg = /https?:\/\/drive.google.com\/[^\s]+/g
+  const reg = /https?:\/\/drive.google.com\/[a-zA-Z0-9_\\/?=&-]+/g
   const m = text.match(reg)
   return m && extract_fid(m[0])
 }
 
-module.exports = { send_count, send_help, sm, extract_fid, reply_cb_query, send_choice, send_task_info, send_all_tasks, tg_copy, extract_from_text, get_target_by_alias, send_bm_help, send_all_bookmarks, set_bookmark, unset_bookmark, clear_tasks, send_task_help, rm_task, clear_button }
+module.exports = { send_count, send_help, sm, extract_fid, reply_cb_query, send_choice, send_task_info, send_all_tasks, tg_copy, extract_from_text, get_target_by_alias, send_bm_help, send_all_bookmarks, set_bookmark, unset_bookmark, clear_tasks, send_task_help, rm_task }
